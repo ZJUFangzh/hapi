@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import type { CodexModelsResponse, CodexModelSummary } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient } from '@/codex/codexAppServerClient';
+import { codexAppServerClientInfo } from '@/codex/clientIdentity';
 import { getErrorMessage } from './rpcResponses';
 
 export interface ListCodexModelsRequest {
@@ -132,10 +133,7 @@ async function fetchCodexModelsFromAppServer(includeHidden: boolean): Promise<Co
     try {
         await client.connect();
         await client.initialize({
-            clientInfo: {
-                name: 'hapi-codex-models',
-                version: '1.0.0'
-            },
+            clientInfo: codexAppServerClientInfo(),
             capabilities: {
                 experimentalApi: true
             }

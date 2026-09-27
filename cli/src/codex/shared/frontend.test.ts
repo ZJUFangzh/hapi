@@ -12,7 +12,7 @@ vi.mock('@/persistence', () => ({ readRunnerState: async () => null }));
 vi.mock('@/utils/process', () => ({ isProcessAlive: () => true, killProcessByChildProcess: state.kill }));
 vi.mock('./registry', () => ({ findRuntime: async () => state.existing ? runtime : undefined, runtimeAlive: () => true }));
 vi.mock('./runtime', () => ({ runSharedRuntime: state.run }));
-vi.mock('../codexAppServerClient', () => ({ CodexAppServerClient: class {
+vi.mock('../codexAppServerClient', () => ({ resolveCodexAppServerVersion: () => '9.9.9', CodexAppServerClient: class {
     setServerRequestHandler() {} async connect() {} async initialize() {} async disconnect() {}
     async request() { return { threadId: 'thread' }; }
 } }));

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { constructorOptions, listModelsMock } = vi.hoisted(() => ({
+const { constructorOptions, listModelsMock, initializeCalls } = vi.hoisted(() => ({
     constructorOptions: [] as unknown[],
-    listModelsMock: vi.fn()
+    listModelsMock: vi.fn(),
+    initializeCalls: [] as unknown[]
 }));
 
 vi.mock('node:os', async () => {
@@ -11,13 +12,16 @@ vi.mock('node:os', async () => {
 });
 
 vi.mock('@/codex/codexAppServerClient', () => ({
+    resolveCodexAppServerVersion: () => '9.9.9',
     CodexAppServerClient: class {
         constructor(options: unknown) {
             constructorOptions.push(options);
         }
 
         async connect(): Promise<void> {}
-        async initialize(): Promise<void> {}
+        async initialize(params: unknown): Promise<void> {
+            initializeCalls.push(params);
+        }
         async listModels(): Promise<{ data: unknown[] }> {
             return listModelsMock();
         }
@@ -30,6 +34,7 @@ import { listCodexModels, _resetCodexModelsCacheForTests } from './codexModels';
 describe('listCodexModels cwd', () => {
     beforeEach(() => {
         constructorOptions.length = 0;
+        initializeCalls.length = 0;
         listModelsMock.mockReset();
         _resetCodexModelsCacheForTests();
     });
@@ -40,6 +45,17 @@ describe('listCodexModels cwd', () => {
         await listCodexModels();
 
         expect(constructorOptions).toEqual([{ cwd: '/neutral-home' }]);
+    });
+
+    it('hands model discovery the same Codex identity as a session', async () => {
+        listModelsMock.mockResolvedValue({ data: [] });
+
+        await listCodexModels();
+
+        expect(initializeCalls).toEqual([{
+            clientInfo: { name: 'codex-tui', title: 'HAPI', version: '9.9.9' },
+            capabilities: { experimentalApi: true }
+        }]);
     });
 
     it('caches the model list within the TTL so repeat calls skip the app-server spawn', async () => {

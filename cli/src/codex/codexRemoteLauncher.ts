@@ -29,6 +29,7 @@ import {
 } from './utils/codexMcpServers';
 import { prepareCodexMcpServers } from './utils/codexMcpProxy';
 import type { SkillMetadata, ThreadGoal, ThreadGoalStatus } from './appServerTypes';
+import { codexAppServerClientInfo } from './clientIdentity';
 import { shouldIgnoreTerminalEvent } from './utils/terminalEventGuard';
 import { parseCodexSpecialCommand } from './codexSpecialCommands';
 import { extractErrorInfo } from '@/utils/errorUtils';
@@ -2038,10 +2039,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
             }
             await appServerClient.connect();
             await appServerClient.initialize({
-                clientInfo: {
-                    name: 'hapi-codex-client',
-                    version: '1.0.0'
-                },
+                clientInfo: codexAppServerClientInfo(),
                 capabilities: {
                     experimentalApi: true
                 }
@@ -3569,10 +3567,7 @@ class CodexRemoteLauncher extends RemoteLauncherBase {
 
         await appServerClient.connect();
         await appServerClient.initialize({
-            clientInfo: {
-                name: 'hapi-codex-client',
-                version: '1.0.0'
-            },
+            clientInfo: codexAppServerClientInfo(),
             capabilities: {
                 experimentalApi: true
             }

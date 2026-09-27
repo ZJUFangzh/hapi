@@ -6,6 +6,7 @@ import { parseCodexCliOverrides, stripCodexCliOverrides } from '../utils/codexCl
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
 import { getCodexSystemPrompt } from '../utils/systemPrompt';
 import type { CodexAppServerClient } from '../codexAppServerClient';
+import { codexAppServerClientInfo } from '../clientIdentity';
 
 export const SharedLaunchSchema = z.object({
     startedBy: z.enum(['runner', 'terminal']).optional(),
@@ -154,7 +155,7 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
 
 export async function initializeSharedClient(client: CodexAppServerClient): Promise<void> {
     await client.connect();
-    await client.initialize({ clientInfo: { name: 'hapi', title: 'HAPI', version: '1' }, capabilities: { experimentalApi: true } });
+    await client.initialize({ clientInfo: codexAppServerClientInfo(), capabilities: { experimentalApi: true } });
 }
 
 /** Invalid IDs only: no probes may create turns, mutate threads or call a model. */

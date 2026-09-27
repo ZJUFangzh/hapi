@@ -90,7 +90,7 @@ describe('listLocalCodexSessionSummaries', () => {
                 payload: {
                     id: 'fork-session-id',
                     cwd: '/tmp/project',
-                    originator: 'hapi-codex-client',
+                    originator: 'codex-tui',
                     cli_version: '0.142.3',
                     source: 'vscode',
                     forked_from_id: 'original-session-id'

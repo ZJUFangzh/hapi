@@ -98,6 +98,10 @@ const harness = vi.hoisted(() => ({
     bridgeOptions: [] as unknown[]
 }));
 
+vi.mock('./clientIdentity', () => ({
+    codexAppServerClientInfo: () => ({ name: 'codex-tui', title: 'HAPI', version: '9.9.9' })
+}));
+
 vi.mock('./codexAppServerClient', () => {
     const INDETERMINATE_SYMBOL = Symbol('codex-app-server-indeterminate');
     class MockCodexAppServerClient {
@@ -1523,8 +1527,9 @@ describe('codexRemoteLauncher', () => {
         expect(harness.startThreadParams[0]?.threadSource).toBe('user');
         expect(harness.initializeCalls).toEqual([{
             clientInfo: {
-                name: 'hapi-codex-client',
-                version: '1.0.0'
+                name: 'codex-tui',
+                title: 'HAPI',
+                version: '9.9.9'
             },
             capabilities: {
                 experimentalApi: true

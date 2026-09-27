@@ -103,16 +103,22 @@ function createAbortError(): Error {
 type CodexCommandCandidate = {
     command: string;
     source: 'desktop' | 'path';
-    version: number[] | null;
+    version: string | null;
 };
 
-function parseCodexVersion(output: string): number[] | null {
-    const match = /(\d+)\.(\d+)\.(\d+)(?:[-+][^\s]+)?/u.exec(output);
+const CODEX_VERSION_PATTERN = /(\d+)\.(\d+)\.(\d+)(?:[-+][^\s]+)?/u;
+
+function parseCodexVersion(output: string): string | null {
+    return CODEX_VERSION_PATTERN.exec(output)?.[0] ?? null;
+}
+
+function toVersionTuple(version: string | null): number[] | null {
+    const match = version ? CODEX_VERSION_PATTERN.exec(version) : null;
     if (!match) return null;
     return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
-function getCodexVersion(command: string): number[] | null {
+function readCodexVersion(command: string): string | null {
     try {
         const output = execFileSync(command, ['--version'], {
             encoding: 'utf8',
@@ -136,15 +142,35 @@ function compareVersion(a: number[] | null, b: number[] | null): number {
     return 0;
 }
 
-export function resolveCodexAppServerCommand(): string {
-    if (process.env.HAPI_CODEX_APP_SERVER_BIN) {
-        return process.env.HAPI_CODEX_APP_SERVER_BIN;
+/**
+ * Which binary will answer `codex app-server`, plus the version that binary
+ * reports. The version is also the client identity Codex expects on the
+ * handshake, so both are resolved together instead of drifting apart.
+ */
+type CodexAppServerResolution = {
+    command: string;
+    version: string | null;
+};
+
+let cachedResolution: CodexAppServerResolution | null = null;
+
+function resolveCodexAppServer(): CodexAppServerResolution {
+    if (cachedResolution) {
+        return cachedResolution;
+    }
+
+    const override = process.env.HAPI_CODEX_APP_SERVER_BIN;
+    if (override) {
+        // The override is authoritative, including for identity: the version
+        // reported to the handshake must be the override's own version.
+        cachedResolution = { command: override, version: readCodexVersion(override) };
+        return cachedResolution;
     }
 
     const candidates: CodexCommandCandidate[] = [{
         command: 'codex',
         source: 'path',
-        version: getCodexVersion('codex')
+        version: readCodexVersion('codex')
     }];
 
     if (process.platform === 'darwin') {
@@ -153,7 +179,7 @@ export function resolveCodexAppServerCommand(): string {
             candidates.push({
                 command: desktopCodex,
                 source: 'desktop',
-                version: getCodexVersion(desktopCodex)
+                version: readCodexVersion(desktopCodex)
             });
         }
     }
@@ -161,7 +187,7 @@ export function resolveCodexAppServerCommand(): string {
     // 中文注释：Codex Desktop 与 npm CLI 都可能写 thread-store；恢复时选择版本更新的 app-server，
     // 避免旧 CLI 读取新 rollout 格式失败。版本相同优先 Desktop，和用户看到的 Codex.app 保持一致。
     const best = candidates.sort((left, right) => {
-        const versionDiff = compareVersion(right.version, left.version);
+        const versionDiff = compareVersion(toVersionTuple(right.version), toVersionTuple(left.version));
         if (versionDiff !== 0) return versionDiff;
         if (left.source === right.source) return 0;
         return left.source === 'desktop' ? -1 : 1;
@@ -172,10 +198,24 @@ export function resolveCodexAppServerCommand(): string {
         candidates: candidates.map((candidate) => ({
             command: candidate.command,
             source: candidate.source,
-            version: candidate.version?.join('.') ?? null
+            version: candidate.version
         }))
     });
-    return best.command;
+    cachedResolution = { command: best.command, version: best.version };
+    return cachedResolution;
+}
+
+export function resolveCodexAppServerCommand(): string {
+    return resolveCodexAppServer().command;
+}
+
+/**
+ * The version of the Codex build that serves this HAPI process, or null when it
+ * cannot be determined. Callers must not invent a value: an unknown version is
+ * reported as unknown rather than silently replaced with an unrelated one.
+ */
+export function resolveCodexAppServerVersion(): string | null {
+    return resolveCodexAppServer().version;
 }
 
 export class CodexAppServerClient extends JsonLineParser {

@@ -257,7 +257,7 @@ describe('CodexSessionSyncDialog', () => {
                 cwd: '/home/user/project',
                 file: '/home/user/.codex/sessions/fork.jsonl',
                 modifiedAt: Date.UTC(2026, 0, 3, 3, 4, 5),
-                originator: 'hapi-codex-client',
+                originator: 'codex-tui',
                 cliVersion: '0.142.3',
                 source: 'vscode',
                 forkedFromId: 'original-session-id'

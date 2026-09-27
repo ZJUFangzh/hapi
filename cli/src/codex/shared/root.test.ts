@@ -10,6 +10,7 @@ import { RPC_METHODS } from '@hapi/protocol/rpcMethods';
 type NativeTurn = { id: string; status: string; items: unknown[] };
 
 vi.mock('../codexAppServerClient', () => ({
+    resolveCodexAppServerVersion: () => '9.9.9',
     CodexAppServerClient: class {
         initialized = false;
         thread = { id: 'thread', turns: [] as NativeTurn[] };

@@ -28,7 +28,8 @@ vi.mock('@/ui/logger', () => ({
     logger: { debug: vi.fn() }
 }));
 
-import { CodexAppServerClient, isIndeterminateError } from './codexAppServerClient';
+import { CodexAppServerClient, isIndeterminateError, resolveCodexAppServerVersion } from './codexAppServerClient';
+import { codexAppServerClientInfo } from './clientIdentity';
 
 function fakeStream(): EventEmitter & { setEncoding: ReturnType<typeof vi.fn> } {
     return Object.assign(new EventEmitter(), { setEncoding: vi.fn() });
@@ -55,6 +56,18 @@ function deferred<T>() {
     });
     return { promise, resolve };
 }
+
+describe('Codex app-server client identity', () => {
+    it('reports the resolved Codex version under the Codex client name', () => {
+        expect(resolveCodexAppServerVersion()).toBe('1.0.0');
+
+        expect(codexAppServerClientInfo()).toEqual({
+            name: 'codex-tui',
+            title: 'HAPI',
+            version: '1.0.0'
+        });
+    });
+});
 
 describe('CodexAppServerClient process cwd', () => {
     beforeEach(() => {
