@@ -29,6 +29,8 @@ import {
     countFutureScheduledLocalMessages,
     minFutureScheduledAtBySessionIds,
     countMessages,
+    getMaxSeq,
+    getStoredContentBytes,
     markMessagesInvoked,
     markMessagesIndeterminate,
     setMessagesDeliveryState,
@@ -168,10 +170,19 @@ export class MessageStore {
         return minFutureScheduledAtBySessionIds(this.db, sessionIds, now)
     }
 
-    // ponytail: scans through leading bookkeeping; index content if that prefix becomes costly.
+    /**
+     * Whether the session has any message that counts as conversation content.
+     *
+     * The answer is "any row matches", so scan order cannot change the result —
+     * but it changes the cost enormously. Newest-first answers in a few rows for
+     * a live session, whereas oldest-first must walk the leading bookkeeping
+     * first: a session opening with tens of thousands of tool calls made every
+     * `refreshSession` decode its entire history (zstd inflate + JSON.parse per
+     * row, plus one table page read each), blocking the hub for minutes.
+     */
     hasConversationContent(sessionId: string): boolean {
         const query = this.db.prepare<{ content: string | Uint8Array }, [string]>(
-            'SELECT content FROM messages WHERE session_id = ? ORDER BY seq ASC'
+            'SELECT content FROM messages WHERE session_id = ? ORDER BY seq DESC'
         )
         try {
             for (const row of query.iterate(sessionId)) {
@@ -185,6 +196,19 @@ export class MessageStore {
 
     countMessages(sessionId: string): number {
         return countMessages(this.db, sessionId)
+    }
+
+    /**
+     * Lower bound on the decoded size of the session — see
+     * `getStoredContentBytes`. Cheap enough to call before loading anything.
+     */
+    getStoredContentBytes(sessionId: string): number {
+        return getStoredContentBytes(this.db, sessionId)
+    }
+
+    /** Highest message seq in the session; 0 when it has none. */
+    getMaxSeq(sessionId: string): number {
+        return getMaxSeq(this.db, sessionId)
     }
 
     cancelQueuedMessage(sessionId: string, messageId: string): CancelQueuedMessageResult {

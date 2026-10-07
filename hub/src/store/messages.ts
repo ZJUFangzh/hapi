@@ -664,6 +664,21 @@ export function getImmediateQueuedLocalMessages(
  * outputs and zero invoked user turns still counts as non-trivial.
  * tiann/hapi#872.
  */
+/**
+ * Total stored content bytes for a session.
+ *
+ * Content is zstd-compressed on disk and expands on read, so this is a **lower
+ * bound** on what the session costs once decoded. It exists so a caller that
+ * only needs to know "is this session already too big to inline" can answer
+ * without decoding a single row — see `MessageService.getSessionExport`.
+ */
+export function getStoredContentBytes(db: Database, sessionId: string): number {
+    const row = prepareCached(db,
+        'SELECT COALESCE(SUM(LENGTH(content)), 0) AS bytes FROM messages WHERE session_id = ?'
+    ).get(sessionId) as { bytes: number } | undefined
+    return row?.bytes ?? 0
+}
+
 export function countMessages(db: Database, sessionId: string): number {
     const row = prepareCached(db, 
         'SELECT COUNT(*) AS count FROM messages WHERE session_id = ?'

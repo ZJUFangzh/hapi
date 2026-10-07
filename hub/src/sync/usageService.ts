@@ -1,6 +1,6 @@
 import type { UsageSummaryBucket, UsageSummaryResponse } from '@hapi/protocol/apiTypes'
 import type { StoredMessage, StoredSession } from '../store'
-import type { UsageEvent } from '../store/usage'
+import type { UsageEvent, UsageEventCursor } from '../store/usage'
 import type { Store } from '../store'
 
 type RecordValue = Record<string, unknown>
@@ -224,6 +224,18 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
  */
 const USAGE_SCAN_BATCH = 1000
 
+/**
+ * How many derived usage events to materialize at once while aggregating the
+ * dashboard summary.
+ *
+ * The scan above only ever appends new events, but the aggregate is computed
+ * from the raw `usage_events` rows, so a hub with real history has to fold
+ * hundreds of thousands of them. Reading the namespace's events in one go
+ * allocates an object per row and can exhaust a small host — so page it, same
+ * as the scan.
+ */
+const USAGE_SUMMARY_BATCH = 5000
+
 /** Hand the event loop back so the hub keeps serving during a long backfill. */
 function yieldToEventLoop(): Promise<void> {
     return new Promise((resolve) => { setImmediate(resolve) })
@@ -244,11 +256,7 @@ async function collectUsageEvents(store: Store, sessions: StoredSession[]): Prom
         let indexedModels: Map<string, string> | null = null
         const getIndexedModel = (sourceKey: string): string | null => {
             if (indexedModels === null) {
-                indexedModels = new Map(
-                    store.usage.getEvents([session.id])
-                        .filter((event): event is UsageEvent & { model: string } => event.model !== null)
-                        .map((event) => [event.sourceKey, event.model])
-                )
+                indexedModels = store.usage.getIndexedModels(session.id)
             }
             return indexedModels.get(sourceKey) ?? null
         }
@@ -400,7 +408,7 @@ export async function getUsageSummary(
     const days = range === '30d' ? 30 : range === 'all' ? null : 7
     const from = days === null ? null : now - days * 24 * 60 * 60 * 1000
     const sessionIds = new Set(sessions.map((session) => session.id))
-    const events = store.usage.getEvents(Array.from(sessionIds))
+    const sessionIdList = Array.from(sessionIds)
     const isInRange = (event: UsageEvent) => (from === null || event.createdAt >= from) && event.createdAt <= now
 
     const totals = emptyTotals()
@@ -412,7 +420,7 @@ export async function getUsageSummary(
     const cumulativeFingerprints = new Set<string>()
     const dayFormatter = createDayFormatter(timeZone)
 
-    for (const event of events) {
+    const consumeEvent = (event: UsageEvent): void => {
         let inputTokens = event.inputTokens
         let outputTokens = event.outputTokens
         let cacheReadTokens = event.cacheReadTokens
@@ -463,7 +471,7 @@ export async function getUsageSummary(
                 cumulativeFingerprints.add(fingerprint)
             }
         }
-        if (duplicateCumulativeEvent || !isInRange(event) || inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens <= 0) continue
+        if (duplicateCumulativeEvent || !isInRange(event) || inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens <= 0) return
         // Cache reads and writes partition processed input. Preserve the
         // request and its primary token counts when a provider emits an
         // impossible partition, but conservatively decline to credit either
@@ -485,6 +493,28 @@ export async function getUsageSummary(
         addTotals(modelTotals, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
         byModel.set(modelKey, modelTotals)
         sessionsWithUsage.add(event.sessionId)
+    }
+
+    // Fold the namespace's events one page at a time. The cursor keeps the
+    // original (created_at, source_seq) order, so every accumulator above sees
+    // exactly the sequence it would have seen from a single query.
+    let cursor: UsageEventCursor | null = null
+    for (;;) {
+        const page = store.usage.getEventsPage(sessionIdList, cursor, USAGE_SUMMARY_BATCH)
+        if (page.length === 0) break
+
+        for (const event of page) {
+            consumeEvent(event)
+        }
+
+        const lastEvent = page[page.length - 1]!
+        cursor = {
+            createdAt: lastEvent.createdAt,
+            sourceSeq: lastEvent.sourceSeq,
+            rowId: lastEvent.rowId
+        }
+
+        await yieldToEventLoop()
     }
 
     const sortBuckets = (values: Map<string, Totals>): UsageSummaryBucket[] => Array.from(values.entries())
