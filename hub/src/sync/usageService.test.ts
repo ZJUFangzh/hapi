@@ -697,6 +697,54 @@ describe('usage service', () => {
         store.close()
     })
 
+    it('folds the usage aggregate in pages instead of reading every event at once', async () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession(
+            'paged-usage-aggregate-test',
+            { path: '/tmp', host: 'test', flavor: 'claude' },
+            null,
+            'default',
+            'test-model'
+        )
+
+        const eventCount = 5200
+        for (let i = 0; i < eventCount; i++) {
+            addAgentMessage(store, session.id, {
+                type: 'output',
+                data: {
+                    type: 'assistant',
+                    message: { id: `aggregate-${i}`, usage: { input_tokens: 3, output_tokens: 1 } }
+                }
+            })
+        }
+
+        let unboundedCalls = 0
+        const wholeEvents = store.usage.getEvents.bind(store.usage)
+        store.usage.getEvents = (sessionIds) => {
+            unboundedCalls++
+            return wholeEvents(sessionIds)
+        }
+        const pageLimits: number[] = []
+        const pagedEvents = store.usage.getEventsPage.bind(store.usage)
+        store.usage.getEventsPage = (sessionIds, cursor, limit) => {
+            pageLimits.push(limit)
+            return pagedEvents(sessionIds, cursor, limit)
+        }
+
+        const result = await getUsageSummary(store, 'default', 'all')
+
+        // Regression: the aggregate used to materialize every derived event of
+        // the namespace in one array before folding it. With real history that
+        // is hundreds of thousands of objects on a host that must also hold the
+        // database. It must page instead.
+        expect(unboundedCalls).toBe(0)
+        expect(pageLimits.length).toBeGreaterThan(1)
+        expect(result.totals.requests).toBe(eventCount)
+        expect(result.totals.inputTokens).toBe(eventCount * 3)
+        expect(result.totals.outputTokens).toBe(eventCount)
+        store.close()
+    })
+
     it('removes usage from transcript history discarded by a rewind', async () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession(
